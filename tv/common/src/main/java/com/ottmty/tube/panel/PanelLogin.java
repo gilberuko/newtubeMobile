@@ -182,10 +182,10 @@ public final class PanelLogin {
 
     private static Device deviceCall(String host, String user, String pass, String mode, String deviceId, String label) {
         try {
-            String base = host.toLowerCase().startsWith("http") ? host : "http://" + host;
-            String url = trimSlash(base) + "/player_api.php?username=" + URLEncoder.encode(user, "UTF-8")
+            // El registro lo lleva el panel (ottmty-panel), no el servidor Xtream.
+            String url = PanelConfig.PANEL_BASE + "/api/app_device.php?username=" + URLEncoder.encode(user, "UTF-8")
                     + "&password=" + URLEncoder.encode(pass, "UTF-8")
-                    + "&action=app_device&modo=" + mode
+                    + "&modo=" + mode
                     + "&app=" + PanelConfig.APP_KEY
                     + "&device=" + URLEncoder.encode(deviceId, "UTF-8")
                     + "&label=" + URLEncoder.encode(label == null ? "" : label, "UTF-8");
@@ -198,7 +198,7 @@ public final class PanelLogin {
             if ("removed".equals(status)) return new Device(DeviceState.REMOVED, max);
             return new Device(DeviceState.UNKNOWN, max);
         } catch (Exception e) {
-            // Servidor sin esta función o sin conexión: no se bloquea a nadie por eso.
+            // Panel sin esta función o sin conexión: no se bloquea a nadie por eso.
             return new Device(DeviceState.UNKNOWN, 0);
         }
     }
