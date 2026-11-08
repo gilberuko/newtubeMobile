@@ -49,6 +49,14 @@ jobs:
         run: ./gradlew --no-daemon --stacktrace :smarttubetv:assembleStmobileRelease -PprofgenPath="$PROFGEN"
       - name: Preparar APK
         run: cp mobile/smarttubetv/build/outputs/renamed_apks/stmobileRelease/YouTube-M_universal.apk YouTube-M.apk
+      - name: Revisar APK
+        run: |
+          set -euo pipefail
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$bt/aapt2" dump badging YouTube-M.apk | grep -E "^package:|^application-label:|^sdkVersion:|^targetSdkVersion:|launchable-activity" | cut -c1-200
+          "$bt/aapt2" dump badging YouTube-M.apk | grep -q "package: name='com.ottmty.tubemobile'"
+          "$bt/apksigner" verify --print-certs YouTube-M.apk | head -3
+          ls -la YouTube-M.apk
       - uses: actions/upload-artifact@v4
         with:
           name: YouTube-M
@@ -83,6 +91,14 @@ jobs:
           ./gradlew --no-daemon --stacktrace assembleStfdroidRelease
       - name: Preparar APK
         run: cp tv/smarttubetv/build/outputs/apk/stfdroid/release/YoTuve-Tv_universal.apk YoTuve-Tv.apk
+      - name: Revisar APK
+        run: |
+          set -euo pipefail
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$bt/aapt2" dump badging YoTuve-Tv.apk | grep -E "^package:|^application-label:|^sdkVersion:|^targetSdkVersion:|launchable-activity" | cut -c1-200
+          "$bt/aapt2" dump badging YoTuve-Tv.apk | grep -q "package: name='com.ottmty.tubetv'"
+          "$bt/apksigner" verify --print-certs YoTuve-Tv.apk | head -3
+          ls -la YoTuve-Tv.apk
       - uses: actions/upload-artifact@v4
         with:
           name: YoTuve-Tv
