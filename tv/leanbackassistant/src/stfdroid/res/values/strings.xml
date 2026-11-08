@@ -1,0 +1,5 @@
+<resources translatable="false">
+    <string name="search_label">Tube OTTMTY</string>
+    <string name="settings_description">Tube OTTMTY</string>
+    <string name="search_authority">com.ottmty.tubetv.search_provider</string>
+</resources>
