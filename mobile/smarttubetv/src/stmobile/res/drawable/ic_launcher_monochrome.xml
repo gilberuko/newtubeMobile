@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tube OTTMTY: capa monocromática (iconos con tema, API 33+). Mismo trazo que el primer plano. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.4"
+        android:pathData="M85,54 A31,31 0 1,1 23,54 A31,31 0 1,1 85,54 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M78.5,54 A24.5,24.5 0 1,1 29.5,54 A24.5,24.5 0 1,1 78.5,54 Z M47.5,43 L47.5,65 L66,54 Z" />
+</vector>
