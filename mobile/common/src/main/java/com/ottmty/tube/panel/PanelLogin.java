@@ -30,7 +30,21 @@ import javax.crypto.spec.SecretKeySpec;
 public final class PanelLogin {
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
-    public enum Status { SUCCESS, INVALID, EXPIRED, NO_CONNECTION }
+    public enum Status { SUCCESS, INVALID, EXPIRED, NO_CONNECTION, DEVICE_LIMIT }
+
+    /** Respuesta del panel sobre el registro de este dispositivo. UNKNOWN: el servidor no lo maneja o no hubo conexión. */
+    public enum DeviceState { OK, LIMIT, REMOVED, UNKNOWN }
+
+    public static final class Device {
+        public final DeviceState state;
+        /** Máximo de dispositivos que permite la cuenta (0 si no se sabe). */
+        public final int max;
+
+        Device(DeviceState state, int max) {
+            this.state = state;
+            this.max = max;
+        }
+    }
 
     public static final class Result {
         public final Status status;
@@ -42,13 +56,23 @@ public final class PanelLogin {
         public final boolean trial;
         /** Diferencia entre la hora del servidor y la del equipo (para que el contador no dependa del reloj del equipo). */
         public final long serverOffsetMs;
+        /** Si el panel confirmó el registro de este dispositivo en la cuenta. */
+        public final boolean deviceRegistered;
+        /** Máximo de dispositivos de la cuenta (solo cuando status es DEVICE_LIMIT). */
+        public final int deviceMax;
 
         Result(Status status, String host, long expiresAt, boolean trial, long serverOffsetMs) {
+            this(status, host, expiresAt, trial, serverOffsetMs, false, 0);
+        }
+
+        Result(Status status, String host, long expiresAt, boolean trial, long serverOffsetMs, boolean deviceRegistered, int deviceMax) {
             this.status = status;
             this.host = host;
             this.expiresAt = expiresAt;
             this.trial = trial;
             this.serverOffsetMs = serverOffsetMs;
+            this.deviceRegistered = deviceRegistered;
+            this.deviceMax = deviceMax;
         }
 
         static Result of(Status status) {
@@ -79,8 +103,11 @@ public final class PanelLogin {
     private PanelLogin() {
     }
 
-    /** Primer inicio de sesión: prueba todos los servidores del panel. */
-    public static Result login(String user, String pass) {
+    /**
+     * Primer inicio de sesión: prueba todos los servidores del panel. Si la cuenta es válida registra este
+     * dispositivo en ella (máximo 4 por cuenta en el panel PRUEBAS XUI); sin lugar devuelve DEVICE_LIMIT.
+     */
+    public static Result login(String user, String pass, String deviceId, String label) {
         List<String> hosts;
         try {
             hosts = portals();
@@ -95,8 +122,14 @@ public final class PanelLogin {
         for (String host : hosts) {
             Probe probe = probe(host, user, pass);
             switch (probe.state) {
-                case ACTIVE:
-                    return new Result(Status.SUCCESS, host, probe.expiresAt, probe.trial, probe.offsetMs);
+                case ACTIVE: {
+                    Device d = registerDevice(host, user, pass, deviceId, label);
+                    if (d.state == DeviceState.LIMIT) {
+                        return new Result(Status.DEVICE_LIMIT, host, 0L, false, 0L, false, d.max);
+                    }
+                    return new Result(Status.SUCCESS, host, probe.expiresAt, probe.trial, probe.offsetMs,
+                            d.state == DeviceState.OK, d.max);
+                }
                 case EXPIRED:
                     expired = true;
                     break;
@@ -127,6 +160,46 @@ public final class PanelLogin {
                 return Result.of(Status.INVALID);
             default:
                 return Result.of(Status.NO_CONNECTION);
+        }
+    }
+
+    // ---- Dispositivos de la cuenta -------------------------------------------
+
+    /** Registra este dispositivo en la cuenta (si ya estaba, solo anota la conexión). */
+    public static Device registerDevice(String host, String user, String pass, String deviceId, String label) {
+        return deviceCall(host, user, pass, "login", deviceId, label);
+    }
+
+    /** Pregunta si este dispositivo sigue registrado (REMOVED = lo quitaron desde el panel). */
+    public static Device checkDevice(String host, String user, String pass, String deviceId) {
+        return deviceCall(host, user, pass, "check", deviceId, "");
+    }
+
+    /** Cerrar sesión: libera el lugar de este dispositivo. */
+    public static void releaseDevice(String host, String user, String pass, String deviceId) {
+        deviceCall(host, user, pass, "logout", deviceId, "");
+    }
+
+    private static Device deviceCall(String host, String user, String pass, String mode, String deviceId, String label) {
+        try {
+            String base = host.toLowerCase().startsWith("http") ? host : "http://" + host;
+            String url = trimSlash(base) + "/player_api.php?username=" + URLEncoder.encode(user, "UTF-8")
+                    + "&password=" + URLEncoder.encode(pass, "UTF-8")
+                    + "&action=app_device&modo=" + mode
+                    + "&app=" + PanelConfig.APP_KEY
+                    + "&device=" + URLEncoder.encode(deviceId, "UTF-8")
+                    + "&label=" + URLEncoder.encode(label == null ? "" : label, "UTF-8");
+            JSONObject d = new JSONObject(get(url)).optJSONObject("app_device");
+            if (d == null) return new Device(DeviceState.UNKNOWN, 0);
+            int max = d.optInt("max", 0);
+            String status = d.optString("status");
+            if ("ok".equals(status)) return new Device(DeviceState.OK, max);
+            if ("limit".equals(status)) return new Device(DeviceState.LIMIT, max);
+            if ("removed".equals(status)) return new Device(DeviceState.REMOVED, max);
+            return new Device(DeviceState.UNKNOWN, max);
+        } catch (Exception e) {
+            // Servidor sin esta función o sin conexión: no se bloquea a nadie por eso.
+            return new Device(DeviceState.UNKNOWN, 0);
         }
     }
 

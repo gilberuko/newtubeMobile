@@ -42,6 +42,22 @@ public final class PanelGate {
         c.getApplicationContext().startActivity(i);
     }
 
+    /**
+     * Cerrar sesión pedido por la persona: se libera el lugar de este dispositivo en el panel
+     * (en segundo plano, con los datos de la sesión) y se vuelve al login.
+     */
+    public static void userLogout(Context c) {
+        final Context app = c.getApplicationContext();
+        final String host = PanelSession.getHost(app);
+        final String user = PanelSession.getUser(app);
+        final String pass = PanelSession.getPass(app);
+        final String device = PanelSession.getDeviceId(app);
+        if (!host.isEmpty() && !user.isEmpty()) {
+            new Thread(() -> PanelLogin.releaseDevice(host, user, pass, device)).start();
+        }
+        logout(app, "");
+    }
+
     /** Cierra la sesión y vuelve al login. */
     public static void logout(Context c, String notice) {
         PanelSession.clear(c);
@@ -63,14 +79,33 @@ public final class PanelGate {
         final String host = PanelSession.getHost(app);
         final String user = PanelSession.getUser(app);
         final String pass = PanelSession.getPass(app);
+        final String device = PanelSession.getDeviceId(app);
+        final boolean registered = PanelSession.isDeviceRegistered(app);
         new Thread(() -> {
             final PanelLogin.Result r = PanelLogin.revalidate(host, user, pass);
+            // Cuenta vigente: se revisa también el lugar de este dispositivo en el panel.
+            PanelLogin.Device dev = null;
+            if (r.status == PanelLogin.Status.SUCCESS) {
+                dev = registered
+                        ? PanelLogin.checkDevice(host, user, pass, device)
+                        : PanelLogin.registerDevice(host, user, pass, device, PanelSession.getDeviceLabel());
+            }
+            final PanelLogin.Device d = dev;
             MAIN.post(() -> {
                 sChecking = false;
                 switch (r.status) {
                     case SUCCESS:
                         sLastCheck = SystemClock.elapsedRealtime();
                         PanelSession.updateAccount(app, r);
+                        if (d != null) {
+                            if (d.state == PanelLogin.DeviceState.REMOVED) {
+                                logout(app, "Este dispositivo fue quitado de tu cuenta. Vuelve a entrar con tu usuario y contraseña.");
+                            } else if (d.state == PanelLogin.DeviceState.LIMIT) {
+                                logout(app, "Tu cuenta ya tiene sus " + (d.max > 0 ? d.max : 4) + " dispositivos registrados.");
+                            } else if (d.state == PanelLogin.DeviceState.OK) {
+                                PanelSession.setDeviceRegistered(app, true);
+                            }
+                        }
                         break;
                     case INVALID:
                         logout(app, "Usuario o contraseña incorrectos.");

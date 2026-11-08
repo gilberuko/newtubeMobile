@@ -74,6 +74,12 @@ public final class PanelAccountDialog {
         valLp.topMargin = PanelUi.dp(a, 6);
         box.addView(validity, valLp);
 
+        TextView device = PanelUi.text(a, "Dispositivo: " + PanelSession.getDeviceId(a), 12, PanelUi.GRAY, false);
+        device.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams devLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        devLp.topMargin = PanelUi.dp(a, 10);
+        box.addView(device, devLp);
+
         final Dialog dialog = new Dialog(a);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
@@ -115,7 +121,7 @@ public final class PanelAccountDialog {
                 .setMessage("Para volver a entrar necesitarás tu usuario y contraseña.")
                 .setPositiveButton("Cerrar sesión", (d, w) -> {
                     parent.dismiss();
-                    PanelGate.logout(a, "");
+                    PanelGate.userLogout(a);
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();

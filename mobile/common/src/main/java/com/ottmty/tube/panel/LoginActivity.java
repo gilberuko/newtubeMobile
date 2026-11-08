@@ -158,7 +158,7 @@ public class LoginActivity extends Activity {
         hideKeyboard();
         setBusy(true);
         new Thread(() -> {
-            final PanelLogin.Result result = PanelLogin.login(user, pass);
+            final PanelLogin.Result result = PanelLogin.login(user, pass, PanelSession.getDeviceId(this), PanelSession.getDeviceLabel());
             mMain.post(() -> onResult(user, pass, result));
         }).start();
     }
@@ -173,6 +173,10 @@ public class LoginActivity extends Activity {
                 break;
             case EXPIRED:
                 showError("Tu cuenta venció. Renuévala para entrar.");
+                break;
+            case DEVICE_LIMIT:
+                showError("Esta cuenta ya tiene sus " + (r.deviceMax > 0 ? r.deviceMax : 4)
+                        + " dispositivos registrados. Cierra sesión en otro equipo o pide que lo quiten.");
                 break;
             case INVALID:
                 showError("Usuario o contraseña incorrectos.");
