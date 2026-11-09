@@ -70,7 +70,10 @@ public class LoginActivity extends Activity {
         int markSize = PanelUi.dp(c, tv ? 96 : 80);
         col.addView(mark, new LinearLayout.LayoutParams(markSize, markSize));
 
-        TextView title = PanelUi.text(c, PanelConfig.APP_NAME, tv ? 32 : 28, PanelUi.WHITE, true);
+        TitleTextView title = new TitleTextView(c);
+        title.setText(PanelConfig.APP_NAME);
+        title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, tv ? 34 : 32);
+        title.setTextColor(PanelUi.WHITE);
         title.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         titleLp.topMargin = PanelUi.dp(c, 12);
