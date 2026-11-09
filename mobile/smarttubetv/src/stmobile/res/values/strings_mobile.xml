@@ -8,6 +8,9 @@
     <string name="mobile_player_pause">Pause</string>
     <string name="mobile_player_replay">Replay</string>
     <string name="mobile_player_fullscreen">Toggle fullscreen</string>
+    <!-- NEWTUBE(lock): the touch-lock button (read out by TalkBack) and the hint on the unlock pill. -->
+    <string name="mobile_player_lock">Lock screen</string>
+    <string name="mobile_player_unlock_hint">Press and hold to unlock</string>
     <string name="mobile_player_time_default" translatable="false">0:00</string>
     <string name="mobile_player_live" translatable="false">LIVE</string>
     <string name="mobile_player_quality">Quality</string>

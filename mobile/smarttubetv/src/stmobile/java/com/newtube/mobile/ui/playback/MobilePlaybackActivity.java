@@ -379,6 +379,48 @@ public class MobilePlaybackActivity extends MobileActivity
     private boolean mIsEngineBlocked;
 
     private boolean mControlsVisible;
+
+    // ---------------------------------------------------------------------------------
+    // NEWTUBE(lock): touch lock for fullscreen (a small child will not leave the video by brushing
+    // the screen). While locked every touch is swallowed in dispatchTouchEvent - tap, swipe, pinch,
+    // double tap, hold - and Back does nothing; any touch shows the unlock pill, and holding it for
+    // UNLOCK_HOLD_MS unlocks. The hold is timed with the clock, not with an animator, so turning the
+    // system animations off cannot make it instant. System gestures (Home, the notification
+    // shade) never reach the app, so they stay out of this.
+    // ---------------------------------------------------------------------------------
+    private static final long UNLOCK_HOLD_MS = 1800;
+    private static final long UNLOCK_HINT_MS = 3000;
+    private static final long UNLOCK_TICK_MS = 32;
+    private boolean mLocked;
+    /** The finger is on the unlock pill and the hold is running. */
+    private boolean mUnlockHolding;
+    /** The touch that began while locked: the rest of it is swallowed even if it unlocks. */
+    private boolean mLockedGesture;
+    private long mUnlockHoldStart;
+    @Nullable private ImageButton mLockButton;
+    @Nullable private View mLockOverlay;
+    @Nullable private View mUnlockGroup;
+    @Nullable private ProgressBar mUnlockProgress;
+    private final int[] mUnlockAt = new int[2];
+    private final Runnable mHideUnlockHint = this::hideUnlockHint;
+    private final Runnable mUnlockTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!mUnlockHolding || !mLocked) {
+                return;
+            }
+            long elapsed = android.os.SystemClock.uptimeMillis() - mUnlockHoldStart;
+            if (elapsed >= UNLOCK_HOLD_MS) {
+                unlockPlayer();
+                return;
+            }
+            if (mUnlockProgress != null) {
+                mUnlockProgress.setProgress((int) (elapsed * 100 / UNLOCK_HOLD_MS));
+            }
+            Utils.postDelayed(this, UNLOCK_TICK_MS);
+        }
+    };
+
     private boolean mScrubbing;
     private boolean mIsEnded;
     private boolean mIsInPip;
@@ -682,6 +724,23 @@ public class MobilePlaybackActivity extends MobileActivity
         mBackButton = findViewById(R.id.mobile_player_back);
         mPlayPauseButton = findViewById(R.id.mobile_player_play_pause);
         mFullscreenButton = findViewById(R.id.mobile_player_fullscreen);
+        // NEWTUBE(lock): the button locks the screen; the pill (shown on any touch while locked)
+        // unlocks it. The pill's long click is for TalkBack, which cannot hold a finger on it.
+        mLockButton = findViewById(R.id.mobile_player_lock);
+        mLockOverlay = findViewById(R.id.mobile_lock_overlay);
+        mUnlockGroup = findViewById(R.id.mobile_player_unlock_group);
+        mUnlockProgress = findViewById(R.id.mobile_player_unlock_progress);
+        if (mLockButton != null) {
+            mLockButton.setOnClickListener(v -> lockPlayer());
+        }
+        if (mUnlockGroup != null) {
+            mUnlockGroup.setOnLongClickListener(v -> {
+                if (mLocked) {
+                    unlockPlayer();
+                }
+                return true;
+            });
+        }
         mPositionView = findViewById(R.id.mobile_player_position);
         mDurationView = findViewById(R.id.mobile_player_duration);
         mLiveChip = findViewById(R.id.mobile_player_live);
@@ -1106,6 +1165,13 @@ public class MobilePlaybackActivity extends MobileActivity
         // Pinch-zoom is a fullscreen gesture (the portrait 16:9 box keeps its two-finger touches
         // for nothing - matching YouTube, which only zooms in fullscreen).
         mVideoArea.setPinchEnabled(orientation == Configuration.ORIENTATION_LANDSCAPE);
+
+        // NEWTUBE(lock): the lock is a fullscreen control. A locked screen stays locked if the phone
+        // is turned (the unlock pill works in portrait too); only the button follows the layout.
+        if (mLockButton != null) {
+            mLockButton.setVisibility(orientation == Configuration.ORIENTATION_LANDSCAPE
+                    ? View.VISIBLE : View.GONE);
+        }
 
         if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
             lp.height = LinearLayout.LayoutParams.MATCH_PARENT;
@@ -1695,6 +1761,7 @@ public class MobilePlaybackActivity extends MobileActivity
         DownloadRegistry.instance(this).removeListener(mDownloadsListener);
         MobileSheets.setPlayerShown(false, false);
         cancelAutoHide();
+        Utils.removeCallbacks(mUnlockTick, mHideUnlockHint); // NEWTUBE(lock)
         mOrientationHandBack.disarm();
         updateOrientationHandBackListener();
         hideRelatedSkeleton(); // cancels the pulse animator + pending timeout
@@ -1919,6 +1986,11 @@ public class MobilePlaybackActivity extends MobileActivity
         if (mClosing) {
             return;
         }
+        // NEWTUBE(lock): Back does nothing on a locked screen, but shows how to unlock it.
+        if (mLocked) {
+            showUnlockHint();
+            return;
+        }
         // NEWTUBE(motion): like YouTube - Back leaves fullscreen first, then minimizes.
         if (!mIsInPip && !mPipEnterPending
                 && layoutOrientation() == Configuration.ORIENTATION_LANDSCAPE) {
@@ -1966,7 +2038,7 @@ public class MobilePlaybackActivity extends MobileActivity
 
     private void onBackGestureStarted() {
         mBackPreview = false;
-        if (mClosing || !canMinimizeByBack()) {
+        if (mClosing || mLocked || !canMinimizeByBack()) {
             return;
         }
         beginMinimizeMorph();
@@ -2179,6 +2251,12 @@ public class MobilePlaybackActivity extends MobileActivity
         if (mControlsRoot.getPaddingLeft() != left || mControlsRoot.getPaddingTop() != top
                 || mControlsRoot.getPaddingRight() != right || mControlsRoot.getPaddingBottom() != bottom) {
             mControlsRoot.setPadding(left, top, right, bottom);
+        }
+        // NEWTUBE(lock): the unlock pill keeps to the same safe area as the controls.
+        if (mLockOverlay != null && (mLockOverlay.getPaddingLeft() != left
+                || mLockOverlay.getPaddingTop() != top || mLockOverlay.getPaddingRight() != right
+                || mLockOverlay.getPaddingBottom() != bottom)) {
+            mLockOverlay.setPadding(left, top, right, bottom);
         }
         bleedScrim(mTopScrim, left, top, right, 0);
         bleedScrim(mBottomScrim, left, 0, right, bottom);
@@ -3044,6 +3122,166 @@ public class MobilePlaybackActivity extends MobileActivity
         return super.dispatchKeyEvent(event);
     }
 
+    // ---------------------------------------------------------------------------------
+    // NEWTUBE(lock): touch lock. See the fields above for the design.
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * The first stop for every touch of the window: while the screen is locked nothing below this
+     * ever sees one, so no gesture of the player (tap, swipe-down, brightness/volume swipes, pinch,
+     * double tap, hold) can fire. A touch that began locked is swallowed to its end, even when the
+     * unlock hold finishes in the middle of it. Not while in PiP: that window's touches are the
+     * system's.
+     */
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        int action = ev.getActionMasked();
+        if (action == android.view.MotionEvent.ACTION_DOWN) {
+            mLockedGesture = mLocked && !mIsInPip && !mPipEnterPending;
+        }
+        if (!mLockedGesture) {
+            return super.dispatchTouchEvent(ev);
+        }
+        if (mLocked) {
+            handleLockedTouch(ev);
+        }
+        if (action == android.view.MotionEvent.ACTION_UP
+                || action == android.view.MotionEvent.ACTION_CANCEL) {
+            mLockedGesture = false;
+        }
+        return true;
+    }
+
+    /** Any touch shows the pill; a touch that starts on the shown pill begins the unlock hold. */
+    private void handleLockedTouch(android.view.MotionEvent ev) {
+        switch (ev.getActionMasked()) {
+            case android.view.MotionEvent.ACTION_DOWN: {
+                boolean onPill = isOnUnlockPill(ev);
+                showUnlockHint();
+                if (onPill) {
+                    beginUnlockHold();
+                }
+                break;
+            }
+            case android.view.MotionEvent.ACTION_MOVE:
+                if (mUnlockHolding && !isOnUnlockPill(ev)) {
+                    cancelUnlockHold();
+                }
+                break;
+            case android.view.MotionEvent.ACTION_UP:
+            case android.view.MotionEvent.ACTION_CANCEL:
+                cancelUnlockHold();
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** True when the touch is on the (visible) unlock pill, with a little slop around it. */
+    private boolean isOnUnlockPill(android.view.MotionEvent ev) {
+        View pill = mUnlockGroup;
+        if (pill == null || pill.getVisibility() != View.VISIBLE || pill.getAlpha() < 0.5f) {
+            return false;
+        }
+        pill.getLocationOnScreen(mUnlockAt);
+        float slop = dp(12);
+        float x = ev.getRawX();
+        float y = ev.getRawY();
+        return x >= mUnlockAt[0] - slop && x <= mUnlockAt[0] + pill.getWidth() + slop
+                && y >= mUnlockAt[1] - slop && y <= mUnlockAt[1] + pill.getHeight() + slop;
+    }
+
+    private void lockPlayer() {
+        if (mLocked || mIsInPip) {
+            return;
+        }
+        mLocked = true;
+        mUnlockHolding = false;
+        hideControls();
+        mVideoArea.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+        // Shows how to unlock for a moment, so the lock is seen to have taken.
+        showUnlockHint();
+    }
+
+    private void unlockPlayer() {
+        if (!mLocked) {
+            return;
+        }
+        mLocked = false;
+        mUnlockHolding = false;
+        Utils.removeCallbacks(mUnlockTick, mHideUnlockHint);
+        if (mUnlockProgress != null) {
+            mUnlockProgress.setProgress(0);
+        }
+        if (mUnlockGroup != null) {
+            mUnlockGroup.animate().cancel();
+            mUnlockGroup.setAlpha(0f);
+            mUnlockGroup.setVisibility(View.GONE);
+        }
+        mVideoArea.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+        // The controls come back (the unlocked screen answers to touches again).
+        showControlsInternal(true);
+    }
+
+    /** Fades the unlock pill in and schedules it away (unless a hold is running). */
+    private void showUnlockHint() {
+        if (mUnlockGroup == null) {
+            return;
+        }
+        Utils.removeCallbacks(mHideUnlockHint);
+        mUnlockGroup.animate().cancel();
+        if (mUnlockGroup.getVisibility() != View.VISIBLE) {
+            mUnlockGroup.setAlpha(0f);
+            mUnlockGroup.setVisibility(View.VISIBLE);
+        }
+        mUnlockGroup.animate().alpha(1f).setDuration(120).start();
+        if (!mUnlockHolding) {
+            Utils.postDelayed(mHideUnlockHint, UNLOCK_HINT_MS);
+        }
+    }
+
+    private void hideUnlockHint() {
+        if (mUnlockGroup == null || mUnlockHolding) {
+            return;
+        }
+        mUnlockGroup.animate().cancel();
+        mUnlockGroup.animate().alpha(0f).setDuration(200).withEndAction(() -> {
+            if (mUnlockGroup != null && mUnlockGroup.getAlpha() == 0f) {
+                mUnlockGroup.setVisibility(View.GONE);
+            }
+        }).start();
+    }
+
+    private void beginUnlockHold() {
+        if (mUnlockHolding || mUnlockGroup == null) {
+            return;
+        }
+        mUnlockHolding = true;
+        mUnlockHoldStart = android.os.SystemClock.uptimeMillis();
+        Utils.removeCallbacks(mHideUnlockHint, mUnlockTick);
+        mUnlockGroup.animate().cancel();
+        mUnlockGroup.setAlpha(1f);
+        if (mUnlockProgress != null) {
+            mUnlockProgress.setProgress(0);
+        }
+        Utils.postDelayed(mUnlockTick, UNLOCK_TICK_MS);
+    }
+
+    /** The finger left the pill (or lifted) before the hold was up: back to zero, pill away soon. */
+    private void cancelUnlockHold() {
+        if (!mUnlockHolding) {
+            return;
+        }
+        mUnlockHolding = false;
+        Utils.removeCallbacks(mUnlockTick, mHideUnlockHint);
+        if (mUnlockProgress != null) {
+            mUnlockProgress.setProgress(0);
+        }
+        if (mLocked) {
+            Utils.postDelayed(mHideUnlockHint, UNLOCK_HINT_MS);
+        }
+    }
+
     private void setupCastOverlay() {
         if (mCastOverlay == null) {
             return;
@@ -3510,6 +3748,10 @@ public class MobilePlaybackActivity extends MobileActivity
     }
 
     private void showControlsInternal(boolean animate) {
+        // NEWTUBE(lock): a locked screen keeps the controls away (nothing on them could be touched).
+        if (mLocked) {
+            return;
+        }
         mControlsVisible = true;
         mControlsRoot.setVisibility(View.VISIBLE);
         mControlsRoot.animate().cancel();

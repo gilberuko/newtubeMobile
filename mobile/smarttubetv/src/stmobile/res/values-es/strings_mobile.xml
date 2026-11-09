@@ -99,6 +99,8 @@
     <string name="mobile_player_pause">Pausar</string>
     <string name="mobile_player_replay">Volver a reproducir</string>
     <string name="mobile_player_fullscreen">Pantalla completa</string>
+    <string name="mobile_player_lock">Bloquear pantalla</string>
+    <string name="mobile_player_unlock_hint">Mantén presionado para desbloquear</string>
     <string name="mobile_player_quality">Calidad</string>
     <string name="mobile_player_audio_track">Pista de audio</string>
     <string name="mobile_player_pip">Imagen en imagen</string>
