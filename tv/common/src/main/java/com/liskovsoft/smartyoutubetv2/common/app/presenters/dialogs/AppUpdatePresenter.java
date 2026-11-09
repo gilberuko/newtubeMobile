@@ -49,8 +49,15 @@ public class AppUpdatePresenter extends BasePresenter<Void> implements AppUpdate
     }
 
     public void start(boolean forceCheck) {
-        // Tube OTTMTY: sin actualizaciones automáticas. La app solo se actualiza instalando
-        // un APK nuevo desde la sección de lanzamientos (Releases) del repositorio.
+        // Tube OTTMTY: busca la versión nueva en newtube-tv.json de los Releases del repositorio.
+        mIsForceCheck = forceCheck;
+
+        if (forceCheck) {
+            LoadingManager.showLoading(getContext(), true);
+            mUpdateChecker.forceCheckForUpdates(mUpdateManifestUrls);
+        } else {
+            mUpdateChecker.checkForUpdates(mUpdateManifestUrls);
+        }
     }
 
     @Override
@@ -58,9 +65,11 @@ public class AppUpdatePresenter extends BasePresenter<Void> implements AppUpdate
         if (mIsForceCheck) {
             LoadingManager.showLoading(getContext(), false);
             showUpdateDialog(versionName, changelog, apkPath);
-        } else if (GeneralData.instance(getContext()).isOldUpdateNotificationsEnabled()) {
+        } else if (getContext() != null && !getViewManager().isPlayerInForeground() && Utils.isAppInForegroundFixed()) {
+            // Tube OTTMTY: al abrir la app se ofrece la actualización de una vez
             showUpdateDialog(versionName, changelog, apkPath);
         } else {
+            // en reproducción o en segundo plano: queda anclada en el menú
             pinUpdateSection(versionName, changelog, apkPath);
         }
     }

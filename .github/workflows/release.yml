@@ -142,8 +142,14 @@ jobs:
               f"1.0.{n}": {"versionCode": n, "changelog": ["Mejoras y correcciones."]},
           }
           json.dump(manifest, open("dist/newtube.json", "w"), indent=2)
+          # Manifiesto de la app de TV (versionCode = 3000 + corrida, igual que en tv/smarttubetv/build.gradle)
+          tv = {
+              "package": {"downloadUrl": f"https://github.com/{repo}/releases/download/v{n}/YoTuve-Tv.apk"},
+              f"32.72.{n}": {"versionCode": 3000 + n, "changelog": ["Mejoras y correcciones."]},
+          }
+          json.dump(tv, open("dist/newtube-tv.json", "w"), indent=2)
           PY
-          gh release create "v${{ github.run_number }}" dist/YouTube-M.apk dist/YoTuve-Tv.apk dist/newtube.json \
+          gh release create "v${{ github.run_number }}" dist/YouTube-M.apk dist/YoTuve-Tv.apk dist/newtube.json dist/newtube-tv.json \
             --repo "${{ github.repository }}" \
             --title "Tube OTTMTY v${{ github.run_number }}" \
             --notes "Última versión: YouTube-M.apk (celular) y YoTuve-Tv.apk (TV)." \

@@ -47,8 +47,10 @@ android {
         applicationId "com.ottmty.tubetv"
         minSdkVersion project.properties.minSdkVersion
         targetSdkVersion project.properties.targetSdkVersion
-        versionCode 2462
-        versionName "32.72"
+        // Tube OTTMTY: cada compilación de GitHub sube de versión (3000 + número de corrida) para que
+        // la app detecte las nuevas; antes era fijo (2462).
+        versionCode 3000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '0')
+        versionName "32.72." + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
 
