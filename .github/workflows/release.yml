@@ -116,8 +116,21 @@ jobs:
       - name: Publicar
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          REPO: ${{ github.repository }}
         run: |
-          gh release create "v${{ github.run_number }}" dist/YouTube-M.apk dist/YoTuve-Tv.apk \
+          # Manifiesto que lee la app del celular para avisar de la versión nueva.
+          python3 - <<'PY'
+          import json, os
+          n = int(os.environ["RUN_NUMBER"])
+          repo = os.environ["REPO"]
+          manifest = {
+              "package": {"downloadUrl": f"https://github.com/{repo}/releases/download/v{n}/YouTube-M.apk"},
+              f"1.0.{n}": {"versionCode": n, "changelog": ["Mejoras y correcciones."]},
+          }
+          json.dump(manifest, open("dist/newtube.json", "w"), indent=2)
+          PY
+          gh release create "v${{ github.run_number }}" dist/YouTube-M.apk dist/YoTuve-Tv.apk dist/newtube.json \
             --repo "${{ github.repository }}" \
             --title "Tube OTTMTY v${{ github.run_number }}" \
             --notes "Última versión: YouTube-M.apk (celular) y YoTuve-Tv.apk (TV)." \

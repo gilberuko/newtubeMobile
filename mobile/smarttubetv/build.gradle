@@ -171,7 +171,7 @@ android {
         buildConfigField "boolean", "BENCHMARK", "false"
         // NEWTUBE(fdroid): -Pfdroid turns the in-app updater off - F-Droid delivers the updates, and
         // its inclusion policy forbids self-updates that aren't an explicit opt-in.
-        buildConfigField "boolean", "IN_APP_UPDATES", "false" // Tube OTTMTY: sin actualizaciones automáticas
+        buildConfigField "boolean", "IN_APP_UPDATES", "true" // Tube OTTMTY: la app avisa de versiones nuevas (newtube.json de nuestros Releases)
 
         // The content of Universal apk
         ndk {
