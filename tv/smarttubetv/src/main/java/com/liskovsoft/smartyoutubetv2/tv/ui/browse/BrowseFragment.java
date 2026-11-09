@@ -6,7 +6,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.Gravity;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
@@ -17,6 +19,7 @@ import androidx.leanback.app.HeadersSupportFragment;
 import androidx.leanback.widget.ArrayObjectAdapter;
 import androidx.leanback.widget.HeaderItem;
 import androidx.leanback.widget.ListRowPresenter;
+import androidx.leanback.widget.ObjectAdapter;
 import androidx.leanback.widget.PageRow;
 import androidx.leanback.widget.Presenter;
 import androidx.leanback.widget.PresenterSelector;
@@ -56,6 +59,7 @@ public class BrowseFragment extends BrowseSupportFragment implements BrowseView 
     private boolean mIsFragmentCreated;
     private boolean mFocusOnContent;
     private CrashRestorer mCrashRestorer;
+    private SectionRailView mRail; // Tube OTTMTY: riel de iconos con el menú oculto
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -96,6 +100,8 @@ public class BrowseFragment extends BrowseSupportFragment implements BrowseView 
 
         mProgressBarManager.setRootView((ViewGroup) root);
 
+        setupRail((ViewGroup) root);
+
         return root;
     }
 
@@ -115,6 +121,61 @@ public class BrowseFragment extends BrowseSupportFragment implements BrowseView 
             selectSectionItem(video);
         });
         mCrashRestorer.restorePlayback();
+    }
+
+    /**
+     * Tube OTTMTY: con el menú oculto queda a la vista un riel con los iconos de las secciones; al
+     * desplegar el menú, el riel se oculta y se ve el menú con iconos y texto.
+     */
+    private void setupRail(ViewGroup root) {
+        int railWidth = getResources().getDimensionPixelSize(R.dimen.lb_browse_rail_width);
+
+        if (railWidth <= 0) {
+            return;
+        }
+
+        mRail = new SectionRailView(root.getContext());
+        mRail.setAlpha(isShowingHeaders() ? 0f : 1f);
+        root.addView(mRail, new FrameLayout.LayoutParams(railWidth, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START));
+
+        // Los iconos de búsqueda/cuenta del título se corren para no quedar debajo del riel
+        View title = getTitleView();
+        if (title != null) {
+            title.setPaddingRelative(title.getPaddingStart() + railWidth, title.getPaddingTop(),
+                    title.getPaddingEnd(), title.getPaddingBottom());
+        }
+
+        mSectionRowAdapter.registerObserver(new ObjectAdapter.DataObserver() {
+            @Override
+            public void onChanged() {
+                mHandler.post(BrowseFragment.this::refreshRail);
+            }
+        });
+
+        setBrowseTransitionListener(new BrowseTransitionListener() {
+            @Override
+            public void onHeadersTransitionStart(boolean withHeaders) {
+                if (mRail != null) {
+                    mRail.animate().alpha(withHeaders ? 0f : 1f).setDuration(150).start();
+                }
+            }
+
+            @Override
+            public void onHeadersTransitionStop(boolean withHeaders) {
+                refreshRail();
+            }
+        });
+
+        refreshRail();
+    }
+
+    private void refreshRail() {
+        if (mRail == null || mSectionRowAdapter == null) {
+            return;
+        }
+
+        mRail.setSections(mSectionRowAdapter, getSelectedPosition());
+        mRail.setAlpha(isShowingHeaders() ? 0f : 1f);
     }
 
     @Override
@@ -155,6 +216,7 @@ public class BrowseFragment extends BrowseSupportFragment implements BrowseView 
                 (row) -> {
                     focusOnContentIfNeeded();
                     mBrowsePresenter.onSectionFocused(getSelectedHeaderId());
+                    refreshRail();
                 }
         );
 

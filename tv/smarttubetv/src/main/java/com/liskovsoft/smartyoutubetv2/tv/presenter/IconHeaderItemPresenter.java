@@ -20,6 +20,7 @@ import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
+import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup;
 import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.smartyoutubetv2.tv.R;
 import com.liskovsoft.smartyoutubetv2.tv.util.ViewUtil;
@@ -77,6 +78,12 @@ public class IconHeaderItemPresenter extends RowHeaderPresenter {
                 Drawable icon = mResId > 0 ? ContextCompat.getDrawable(rootView.getContext(), mResId) : mDefaultIcon;
                 iconView.setImageDrawable(icon);
             }
+        }
+
+        // Tube OTTMTY: Ajustes va aparte, con una línea arriba.
+        View divider = rootView.findViewById(R.id.header_divider);
+        if (divider != null) {
+            divider.setVisibility(headerItem.getId() == MediaGroup.TYPE_SETTINGS ? View.VISIBLE : View.GONE);
         }
 
         TextView label = rootView.findViewById(R.id.header_label);
