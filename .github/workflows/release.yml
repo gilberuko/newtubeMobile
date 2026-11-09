@@ -46,7 +46,14 @@ jobs:
         run: .github/scripts/signing.sh mobile
       - name: Compilar
         working-directory: mobile
-        run: ./gradlew --no-daemon --stacktrace :smarttubetv:assembleStmobileRelease -PprofgenPath="$PROFGEN"
+        run: |
+          # Reintenta si GitHub falla al bajar Gradle (errores 504 pasajeros).
+          for i in 1 2 3 4; do
+            ./gradlew --no-daemon --stacktrace :smarttubetv:assembleStmobileRelease -PprofgenPath="$PROFGEN" && exit 0
+            echo "Intento $i falló; reintentando en 60 s..."
+            sleep 60
+          done
+          exit 1
       - name: Preparar APK
         run: cp mobile/smarttubetv/build/outputs/renamed_apks/stmobileRelease/YouTube-M_universal.apk YouTube-M.apk
       - name: Revisar APK
@@ -88,7 +95,13 @@ jobs:
         working-directory: tv
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace assembleStfdroidRelease
+          # Reintenta si GitHub falla al bajar Gradle (errores 504 pasajeros).
+          for i in 1 2 3 4; do
+            ./gradlew --no-daemon --stacktrace assembleStfdroidRelease && exit 0
+            echo "Intento $i falló; reintentando en 60 s..."
+            sleep 60
+          done
+          exit 1
       - name: Preparar APK
         run: cp tv/smarttubetv/build/outputs/apk/stfdroid/release/YoTuve-Tv_universal.apk YoTuve-Tv.apk
       - name: Revisar APK
