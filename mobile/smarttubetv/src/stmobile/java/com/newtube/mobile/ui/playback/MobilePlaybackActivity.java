@@ -1166,8 +1166,10 @@ public class MobilePlaybackActivity extends MobileActivity
         // for nothing - matching YouTube, which only zooms in fullscreen).
         mVideoArea.setPinchEnabled(orientation == Configuration.ORIENTATION_LANDSCAPE);
 
-        // NEWTUBE(lock): the lock is a fullscreen control. A locked screen stays locked if the phone
-        // is turned (the unlock pill works in portrait too); only the button follows the layout.
+        // NEWTUBE(lock): the lock is a fullscreen control. Locking also holds the window's
+        // orientation (lockPlayer), so on a phone it does not turn to portrait; where the window
+        // can rotate anyway (a tablet, split screen) the lock stays on and the unlock pill works in
+        // portrait too. Only the button follows the layout.
         if (mLockButton != null) {
             mLockButton.setVisibility(orientation == Configuration.ORIENTATION_LANDSCAPE
                     ? View.VISIBLE : View.GONE);
@@ -3197,10 +3199,37 @@ public class MobilePlaybackActivity extends MobileActivity
         }
         mLocked = true;
         mUnlockHolding = false;
+        // Fullscreen stays fullscreen: the window is held as it is - turning the phone upright no
+        // longer drops to the small player - and the hand-back to the sensor waits for the unlock.
+        mOrientationHandBack.disarm();
+        updateOrientationHandBackListener();
+        if (!mPipEnterPending) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LOCKED);
+        }
         hideControls();
         mVideoArea.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
         // Shows how to unlock for a moment, so the lock is seen to have taken.
         showUnlockHint();
+    }
+
+    /**
+     * Gives the orientation back after a lock, the way the fullscreen button leaves it: a
+     * landscape window keeps its force until the phone is held sideways (OrientationHandBack), so
+     * unlocking with the phone upright does not snap the player to portrait on the spot.
+     */
+    private void releaseOrientationHold() {
+        if (mIsInPip || mPipEnterPending) {
+            return; // PiP owns the request meanwhile (releaseOrientationLockForPip)
+        }
+        if (getRequestedOrientation() != ActivityInfo.SCREEN_ORIENTATION_LOCKED) {
+            return; // not ours any more
+        }
+        if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            armOrientationHandBack(Configuration.ORIENTATION_LANDSCAPE);
+        } else {
+            setRequestedOrientation(FREE_ORIENTATION);
+        }
     }
 
     private void unlockPlayer() {
@@ -3219,6 +3248,7 @@ public class MobilePlaybackActivity extends MobileActivity
             mUnlockGroup.setVisibility(View.GONE);
         }
         mVideoArea.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+        releaseOrientationHold();
         // The controls come back (the unlocked screen answers to touches again).
         showControlsInternal(true);
     }
