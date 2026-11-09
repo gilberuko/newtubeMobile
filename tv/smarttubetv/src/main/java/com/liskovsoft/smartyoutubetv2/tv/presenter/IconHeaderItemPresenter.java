@@ -45,7 +45,7 @@ public class IconHeaderItemPresenter extends RowHeaderPresenter {
                 .getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         mDefaultIcon = new ColorDrawable(ContextCompat.getColor(viewGroup.getContext(), R.color.lb_grey));
 
-        View view = inflater.inflate(R.layout.icon_header_item, null);
+        View view = inflater.inflate(R.layout.icon_header_item, viewGroup, false); // con el padre, para que el elemento ocupe todo el ancho
         view.setAlpha(mUnselectedAlpha); // Initialize icons to be at half-opacity.
 
         return new ViewHolder(view);

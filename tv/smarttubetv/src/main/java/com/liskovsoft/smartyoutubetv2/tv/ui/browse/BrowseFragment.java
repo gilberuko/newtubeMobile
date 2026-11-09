@@ -111,6 +111,8 @@ public class BrowseFragment extends BrowseSupportFragment implements BrowseView 
 
         setupEventListeners();
 
+        styleHeadersPanel();
+
         prepareEntranceTransition();
 
         mBrowsePresenter.onViewInitialized();
@@ -167,6 +169,29 @@ public class BrowseFragment extends BrowseSupportFragment implements BrowseView 
         });
 
         refreshRail();
+    }
+
+    /** Tube OTTMTY: el menú desplegado se funde con el contenido (opaco a la izquierda, transparente a la derecha). */
+    private void styleHeadersPanel() {
+        if (getContext() == null || getHeadersSupportFragment() == null) {
+            return;
+        }
+
+        View grid = getHeadersSupportFragment().getVerticalGridView();
+        if (grid != null) {
+            grid.setBackground(new android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                    new int[]{0xFF121212, 0xF0121212, 0x00121212}));
+        }
+
+        View panel = getHeadersSupportFragment().getView();
+        if (panel != null) {
+            int fadeId = getResources().getIdentifier("fade_out_edge", "id", getContext().getPackageName());
+            View fade = fadeId != 0 ? panel.findViewById(fadeId) : null;
+            if (fade != null) {
+                fade.setVisibility(View.GONE); // el borde de color ya no hace falta con el degradado
+            }
+        }
     }
 
     private void refreshRail() {
