@@ -4,7 +4,6 @@ import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.media.MediaMuxer;
-import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
@@ -21,13 +20,11 @@ import java.io.IOException;
 /**
  * Where finished downloads live, and how they are opened, shared and deleted.
  *
- * <p>Android 10+: the public media collections ({@code Movies/NewTube}, {@code Music/NewTube})
- * through MediaStore - no storage permission, the files show up in the gallery and any file
- * manager, and the app keeps write access to what it created. The muxer writes straight into
- * the collection's file descriptor, so a finished file is never copied.
- *
- * <p>Android 7-9: {@code Android/media/<package>/NewTube} - the one public location an app can
- * write without a runtime permission there; a media scan makes it visible.
+ * <p>New downloads go to the app's private no-backup storage ({@code noBackupFilesDir/NewTube}),
+ * so they never appear in the gallery or file managers and are removed with the app. Downloads
+ * made by older builds sit in MediaStore ({@code Movies/NewTube}, {@code Music/NewTube}) or
+ * {@code Android/media}; {@link #exists}, {@link #sizeOf}, {@link #delete} and {@link #shareUri}
+ * still handle those URIs.
  */
 final class DownloadStorage {
     private static final String FOLDER = "NewTube";
@@ -51,36 +48,15 @@ final class DownloadStorage {
         mContext = context.getApplicationContext();
     }
 
+    /**
+     * Always a file in the app's private, no-backup storage: nothing is published to MediaStore,
+     * so the gallery, music players and file managers never list it, and no permission is needed.
+     * The app plays it back itself (see {@link DownloadsBridge}); the muxer writes straight into it.
+     */
     Target create(String fileName, boolean audioOnly) throws IOException {
-        String mime = audioOnly ? "audio/mp4" : "video/mp4";
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ContentResolver resolver = mContext.getContentResolver();
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
-            values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
-            values.put(MediaStore.MediaColumns.RELATIVE_PATH,
-                    (audioOnly ? "Music" : "Movies") + File.separator + FOLDER);
-            values.put(MediaStore.MediaColumns.IS_PENDING, 1);
-
-            Uri collection = audioOnly
-                    ? MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                    : MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
-            Uri uri = resolver.insert(collection, values);
-            if (uri == null) {
-                throw new IOException("media store refused the file");
-            }
-            ParcelFileDescriptor pfd = resolver.openFileDescriptor(uri, "rw");
-            if (pfd == null) {
-                resolver.delete(uri, null, null);
-                throw new IOException("media store file not writable");
-            }
-            return new Target(uri, null, pfd);
-        }
-
-        File dir = legacyDir();
+        File dir = privateDir();
         if (dir == null) {
-            throw new IOException("no external storage");
+            throw new IOException("no private storage");
         }
         File file = uniqueFile(dir, fileName);
         return new Target(Uri.fromFile(file), file, null);
@@ -108,9 +84,8 @@ final class DownloadStorage {
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0);
                 mContext.getContentResolver().update(target.uri, values, null, null);
             }
-        } else if (target.file != null) {
-            MediaScannerConnection.scanFile(mContext, new String[]{target.file.getAbsolutePath()}, null, null);
         }
+        // A private file is deliberately not scanned: it must stay out of the gallery.
     }
 
     /** Drops a half-written output. */
@@ -135,9 +110,7 @@ final class DownloadStorage {
             }
             if (ContentResolver.SCHEME_FILE.equals(uri.getScheme()) && uri.getPath() != null) {
                 File file = new File(uri.getPath());
-                boolean deleted = file.delete();
-                MediaScannerConnection.scanFile(mContext, new String[]{file.getAbsolutePath()}, null, null);
-                return deleted;
+                return file.delete();
             }
         } catch (SecurityException | IllegalArgumentException e) {
             return false;
@@ -193,16 +166,23 @@ final class DownloadStorage {
     }
 
     @Nullable
-    private File legacyDir() {
-        File[] dirs = mContext.getExternalMediaDirs();
-        File base = dirs != null && dirs.length > 0 ? dirs[0] : null;
-        if (base == null) {
-            return null;
-        }
-        File dir = new File(base, FOLDER);
+    private File privateDir() {
+        File dir = new File(mContext.getNoBackupFilesDir(), FOLDER);
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
-        return dir.isDirectory() ? dir : null;
+        if (!dir.isDirectory()) {
+            return null;
+        }
+        // Belt and braces: tells any media scanner to skip the folder.
+        File nomedia = new File(dir, ".nomedia");
+        if (!nomedia.exists()) {
+            try {
+                //noinspection ResultOfMethodCallIgnored
+                nomedia.createNewFile();
+            } catch (IOException ignored) {
+            }
+        }
+        return dir;
     }
 
     private static File uniqueFile(File dir, String fileName) {

@@ -6,4 +6,6 @@
     <external-cache-path name="external_cache_files" path="."/>
     <external-media-path name="media" path="." />
     <cache-path name="cache_files" path="."/>
+    <!-- Private downloads of the mobile app (noBackupFilesDir), shared only on explicit user action. -->
+    <no-backup-files-path name="no_backup_files" path="."/>
 </paths>
