@@ -282,6 +282,7 @@ public class MobileBrowseActivity extends MobileActivity
         // its list; the first launch after an update says so (once the feed has had its moment).
         AppUpdates.instance(this).addListener(mUpdatesListener);
         refreshUpdateBadge();
+        refreshUpdateBanner();
         mBottomNav.postDelayed(mAnnounceUpdateInstalled, UPDATED_NOTICE_DELAY_MS);
 
         // Android 13+ (targetSdk 35): POST_NOTIFICATIONS is a runtime permission - without it
@@ -298,6 +299,7 @@ public class MobileBrowseActivity extends MobileActivity
         mContentGrid = findViewById(R.id.mobile_content_grid);
         mContentSwipe = findViewById(R.id.mobile_content_swipe);
         mFeedSkeleton = findViewById(R.id.mobile_feed_skeleton);
+        bindUpdateBanner();
         setupSwipeRefresh();
         mBottomNav = findViewById(R.id.mobile_bottom_nav);
         mYouPanel = findViewById(R.id.mobile_you_panel);
@@ -1028,6 +1030,7 @@ public class MobileBrowseActivity extends MobileActivity
         boolean subScreen = mSectionFromYou && !mYouShowing
                 && mBottomNav.getMenu().findItem(toMenuItemId(mCurrentSectionId)) == null;
         mTopBar.show(subScreen, getCurrentSectionTitle());
+        refreshUpdateBanner();
     }
 
     /**
@@ -1140,6 +1143,7 @@ public class MobileBrowseActivity extends MobileActivity
 
     private void onUpdatesChanged() {
         refreshUpdateBadge();
+        refreshUpdateBanner();
 
         if (!mYouShowing) {
             return;
@@ -1199,6 +1203,88 @@ public class MobileBrowseActivity extends MobileActivity
                 title.setText(R.string.mobile_update_row_available);
                 subtitle.setText(appVersion);
                 break;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // Tube OTTMTY: aviso de actualización en el inicio
+    // ---------------------------------------------------------------------------------
+
+    /** El usuario lo cerró con la X: no vuelve a salir hasta el próximo arranque de la app. */
+    private static boolean sUpdateBannerDismissed;
+    @Nullable private View mUpdateBanner;
+    @Nullable private TextView mUpdateBannerTitle;
+    @Nullable private TextView mUpdateBannerSub;
+    @Nullable private TextView mUpdateBannerAction;
+
+    private void bindUpdateBanner() {
+        mUpdateBanner = findViewById(R.id.mobile_update_banner);
+        mUpdateBannerTitle = findViewById(R.id.mobile_update_banner_title);
+        mUpdateBannerSub = findViewById(R.id.mobile_update_banner_sub);
+        mUpdateBannerAction = findViewById(R.id.mobile_update_banner_action);
+
+        if (mUpdateBanner == null) {
+            return;
+        }
+
+        mUpdateBanner.setOnClickListener(v -> MobileUpdateActivity.start(this));
+        mUpdateBannerAction.setOnClickListener(v -> MobileUpdateActivity.start(this));
+        findViewById(R.id.mobile_update_banner_close).setOnClickListener(v -> {
+            sUpdateBannerDismissed = true;
+            refreshUpdateBanner();
+        });
+    }
+
+    /**
+     * El banner sale solo en Home, mientras haya una versión nueva (o se esté descargando / lista
+     * para instalar) y el usuario no lo haya cerrado. Un toque abre la hoja de actualización.
+     */
+    private void refreshUpdateBanner() {
+        if (mUpdateBanner == null) {
+            return;
+        }
+
+        AppUpdates updates = AppUpdates.instance(this);
+        boolean show = updates.hasUpdate() && !sUpdateBannerDismissed && !mYouShowing
+                && mCurrentSectionId == MediaGroup.TYPE_HOME;
+
+        if (!show) {
+            mUpdateBanner.animate().cancel();
+            mUpdateBanner.setVisibility(View.GONE);
+            return;
+        }
+
+        String version = updates.getUpdateVersionName();
+        String appVersion = getString(R.string.mobile_update_app_version, version);
+
+        switch (updates.getPhase()) {
+            case DOWNLOADING:
+                long total = updates.getDownloadTotal();
+                mUpdateBannerTitle.setText(R.string.mobile_update_row_downloading);
+                mUpdateBannerSub.setText(total > 0 ? getString(R.string.mobile_update_row_downloading_percent, version,
+                        (int) Math.min(100, updates.getDownloadedBytes() * 100 / total)) : appVersion);
+                mUpdateBannerAction.setVisibility(View.GONE);
+                break;
+            case READY:
+                mUpdateBannerTitle.setText(R.string.mobile_update_row_ready);
+                mUpdateBannerSub.setText(appVersion);
+                mUpdateBannerAction.setText(R.string.mobile_update_install);
+                mUpdateBannerAction.setVisibility(View.VISIBLE);
+                break;
+            default:
+                mUpdateBannerTitle.setText(R.string.mobile_update_row_available);
+                mUpdateBannerSub.setText(appVersion);
+                mUpdateBannerAction.setText(R.string.mobile_update_update);
+                mUpdateBannerAction.setVisibility(View.VISIBLE);
+                break;
+        }
+
+        if (mUpdateBanner.getVisibility() != View.VISIBLE) {
+            float density = getResources().getDisplayMetrics().density;
+            mUpdateBanner.setAlpha(0f);
+            mUpdateBanner.setTranslationY(-16 * density);
+            mUpdateBanner.setVisibility(View.VISIBLE);
+            mUpdateBanner.animate().alpha(1f).translationY(0f).setDuration(260).start();
         }
     }
 
@@ -1273,6 +1359,7 @@ public class MobileBrowseActivity extends MobileActivity
 
         boolean switched = mCurrentSectionId != sectionId;
         mCurrentSectionId = sectionId;
+        refreshUpdateBanner();
         paintCachedSnapshot(sectionId, switched);
         syncNavHighlight(sectionId);
 
@@ -2149,6 +2236,7 @@ public class MobileBrowseActivity extends MobileActivity
             hideYouPanel();
             boolean switched = mCurrentSectionId != section.getId();
             mCurrentSectionId = section.getId();
+            refreshUpdateBanner();
             paintCachedSnapshot(section.getId(), switched);
 
             // The section may not be one of the sections shown in the bottom nav - e.g. the

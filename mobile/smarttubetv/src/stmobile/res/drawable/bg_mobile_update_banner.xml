@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fondo del aviso de actualización del inicio: tarjeta roja de la marca. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#C4161C" />
+    <corners android:radius="16dp" />
+</shape>

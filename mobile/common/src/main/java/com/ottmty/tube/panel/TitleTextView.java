@@ -29,6 +29,8 @@ public class TitleTextView extends AppCompatTextView {
     private final Typeface mPlainTypeface;
     private final Paint mDraw = new Paint(Paint.ANTI_ALIAS_FLAG);
     private boolean mWordmark;
+    /** Destello que cruza la palabra: 0 a 1 de izquierda a derecha; negativo = apagado. */
+    private float mShine = -1f;
 
     public TitleTextView(Context context) {
         this(context, null);
@@ -42,6 +44,15 @@ public class TitleTextView extends AppCompatTextView {
         super(context, attrs, defStyleAttr);
         mPlainTypeface = getTypeface();
         setWordmark(true);
+    }
+
+    /** Posición del destello (0 a 1); cualquier valor negativo lo apaga. Solo se ve en modo wordmark. */
+    public void setShine(float progress) {
+        if (mShine == progress) {
+            return;
+        }
+        mShine = progress;
+        invalidate();
     }
 
     public void setWordmark(boolean wordmark) {
@@ -130,6 +141,16 @@ public class TitleTextView extends AppCompatTextView {
                 new int[]{RED_TOP, RED_MID, BLACK}, new float[]{0f, 0.45f, 1f},
                 Shader.TileMode.CLAMP));
         canvas.drawText(s, x, base, p);
+
+        // destello: una franja blanca diagonal que pasa solo sobre las letras
+        if (mShine >= 0f && mShine <= 1f) {
+            float bw = textW * 0.2f;
+            float cx = x - bw + (textW + 2f * bw) * mShine;
+            p.setShader(new LinearGradient(cx - bw, top, cx + bw, bottom,
+                    new int[]{0x00FFFFFF, 0xCCFFFFFF, 0x00FFFFFF}, new float[]{0f, 0.5f, 1f},
+                    Shader.TileMode.CLAMP));
+            canvas.drawText(s, x, base, p);
+        }
         p.setShader(null);
     }
 }

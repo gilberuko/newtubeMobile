@@ -1,8 +1,11 @@
 package com.ottmty.tube.panel;
 
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.os.Bundle;
 import android.os.Handler;
@@ -11,10 +14,13 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -23,6 +29,10 @@ import android.widget.TextView;
 /**
  * Pantalla de inicio de sesión (tema oscuro tipo YouTube) ligada al panel ibo.
  * Sin sesión, la app no pasa de aquí.
+ *
+ * Diseño "Brasas y brillo": resplandor rojo y brasas que suben de fondo, la marca con un punto que
+ * la orbita, destello que cruza el nombre, campos con icono y borde rojo al enfocar, entrada
+ * escalonada y sacudida del formulario cuando hay un error. Los efectos viven en {@link LoginFx}.
  */
 public class LoginActivity extends Activity {
     private final Handler mMain = new Handler(Looper.getMainLooper());
@@ -32,6 +42,27 @@ public class LoginActivity extends Activity {
     private TextView mError;
     private ProgressBar mProgress;
     private boolean mBusy;
+    private TitleTextView mTitle;
+    private LinearLayout mCol;
+    private static final long SHINE_FIRST_MS = 1400;
+    private static final long SHINE_EVERY_MS = 5000;
+    private final Runnable mShineLoop = new Runnable() {
+        @Override
+        public void run() {
+            if (isFinishing() || mTitle == null) return;
+            ValueAnimator a = ValueAnimator.ofFloat(0f, 1f);
+            a.setDuration(1500);
+            a.addUpdateListener(an -> mTitle.setShine((float) an.getAnimatedValue()));
+            a.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(android.animation.Animator animation) {
+                    if (mTitle != null) mTitle.setShine(-1f);
+                }
+            });
+            a.start();
+            mMain.postDelayed(this, SHINE_EVERY_MS);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,9 +80,16 @@ public class LoginActivity extends Activity {
         final boolean tv = PanelConfig.IS_TV;
         final Context c = this;
 
+        FrameLayout root = new FrameLayout(c);
+        root.setBackgroundColor(0xFF0A0A0A);
+        root.addView(new LoginFx.EmberView(c), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
         ScrollView scroll = new ScrollView(c);
-        scroll.setBackgroundColor(PanelUi.BG);
+        scroll.setBackgroundColor(Color.TRANSPARENT);
         scroll.setFillViewport(true);
+        root.addView(scroll, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         LinearLayout outer = new LinearLayout(c);
         outer.setOrientation(LinearLayout.VERTICAL);
@@ -65,18 +103,20 @@ public class LoginActivity extends Activity {
         col.setGravity(Gravity.CENTER_HORIZONTAL);
         outer.addView(col, new LinearLayout.LayoutParams(
                 tv ? PanelUi.dp(c, 460) : ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        mCol = col;
 
-        PanelUi.MarkView mark = new PanelUi.MarkView(c);
-        int markSize = PanelUi.dp(c, tv ? 96 : 80);
-        col.addView(mark, new LinearLayout.LayoutParams(markSize, markSize));
+        LoginFx.OrbitFrame mark = new LoginFx.OrbitFrame(c, PanelUi.dp(c, tv ? 96 : 84));
+        int frame = mark.frameSize();
+        col.addView(mark, new LinearLayout.LayoutParams(frame, frame));
 
         TitleTextView title = new TitleTextView(c);
+        mTitle = title;
         title.setText(PanelConfig.APP_NAME);
         title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, tv ? 34 : 32);
         title.setTextColor(PanelUi.WHITE);
         title.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        titleLp.topMargin = PanelUi.dp(c, 12);
+        titleLp.topMargin = PanelUi.dp(c, 4);
         col.addView(title, titleLp);
 
         TextView subtitle = PanelUi.text(c, "Inicia sesión con tu cuenta", 15, PanelUi.GRAY, false);
@@ -86,8 +126,8 @@ public class LoginActivity extends Activity {
         subLp.bottomMargin = PanelUi.dp(c, 24);
         col.addView(subtitle, subLp);
 
-        mUser = field(c, "Usuario", false);
-        mPass = field(c, "Contraseña", true);
+        mUser = field(c, "Usuario", false, LoginFx.GlyphDrawable.USER);
+        mPass = field(c, "Contraseña", true, LoginFx.GlyphDrawable.LOCK);
         mUser.setImeOptions(EditorInfo.IME_ACTION_NEXT);
         mPass.setImeOptions(EditorInfo.IME_ACTION_DONE);
         mPass.setOnEditorActionListener((v, actionId, event) -> {
@@ -123,20 +163,60 @@ public class LoginActivity extends Activity {
         footLp.topMargin = PanelUi.dp(c, 22);
         col.addView(footer, footLp);
 
-        setContentView(scroll);
+        setContentView(root);
         mUser.requestFocus();
+        animateEntry(mark, title, subtitle, mUser, mPass, mButton, footer);
     }
 
-    private EditText field(Context c, String hint, boolean password) {
-        EditText e = new EditText(c);
+    /** Entrada escalonada: la marca crece con rebote y lo demás sube con desvanecido. */
+    private void animateEntry(View... views) {
+        float rise = PanelUi.dp(this, 28);
+        for (int i = 0; i < views.length; i++) {
+            View v = views[i];
+            v.setAlpha(0f);
+            if (i == 0) {
+                v.setScaleX(0.5f);
+                v.setScaleY(0.5f);
+                v.animate().alpha(1f).scaleX(1f).scaleY(1f).setStartDelay(60).setDuration(650)
+                        .setInterpolator(new OvershootInterpolator(1.6f)).start();
+            } else {
+                v.setTranslationY(rise);
+                v.animate().alpha(1f).translationY(0f).setStartDelay(160L + i * 90L).setDuration(520)
+                        .setInterpolator(new DecelerateInterpolator(2f)).start();
+            }
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mTitle != null) {
+            mMain.removeCallbacks(mShineLoop);
+            mMain.postDelayed(mShineLoop, SHINE_FIRST_MS);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        mMain.removeCallbacks(mShineLoop);
+        super.onPause();
+    }
+
+    private EditText field(Context c, String hint, boolean password, int glyphKind) {
+        final EditText e = new EditText(c);
         e.setHint(hint);
         e.setHintTextColor(PanelUi.GRAY);
         e.setTextColor(PanelUi.WHITE);
         e.setTextSize(16);
         e.setSingleLine(true);
-        e.setBackground(PanelUi.fieldBackground(c));
+        e.setBackground(LoginFx.fieldBackground(c));
         int h = PanelUi.dp(c, 16);
-        e.setPadding(h, PanelUi.dp(c, 14), h, PanelUi.dp(c, 14));
+        e.setPadding(h, PanelUi.dp(c, 16), h, PanelUi.dp(c, 16));
+        // icono a la izquierda: gris, y rojo mientras el campo tiene el foco
+        final LoginFx.GlyphDrawable glyph = new LoginFx.GlyphDrawable(glyphKind, PanelUi.dp(c, 22), PanelUi.GRAY);
+        e.setCompoundDrawablesRelativeWithIntrinsicBounds(glyph, null, null, null);
+        e.setCompoundDrawablePadding(PanelUi.dp(c, 14));
+        e.setOnFocusChangeListener((v, hasFocus) -> glyph.setColor(hasFocus ? PanelUi.RED : PanelUi.GRAY));
         e.setInputType(password
                 ? (InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD)
                 : (InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS));
@@ -201,6 +281,15 @@ public class LoginActivity extends Activity {
     private void showError(String message) {
         mError.setText(message);
         mError.setVisibility(View.VISIBLE);
+        shake();
+    }
+
+    /** Sacudida corta del formulario: el aviso de que algo no salió bien. */
+    private void shake() {
+        if (mCol == null) return;
+        float d = PanelUi.dp(this, 10);
+        ObjectAnimator.ofFloat(mCol, View.TRANSLATION_X, 0f, -d, d, -d * 0.8f, d * 0.8f, -d * 0.4f, 0f)
+                .setDuration(380).start();
     }
 
     private void hideKeyboard() {
